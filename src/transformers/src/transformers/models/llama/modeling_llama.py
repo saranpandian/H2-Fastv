@@ -645,6 +645,7 @@ class LlamaModel(LlamaPreTrainedModel):
         self.fast_v_attention_rank = self.config.fast_v_attention_rank
         self.fast_v_agg_layer = self.config.fast_v_agg_layer
         self.fast_v_inplace = self.config.fast_v_inplace
+        ########################### Heavy hitter configurations #################################
         self.h2_user_prompt = self.config.h2_user_prompt
         self.h2_system_prompt = self.config.h2_system_prompt
         self.h2_user_system_prompt = self.config.h2_user_system_prompt
@@ -805,7 +806,7 @@ class LlamaModel(LlamaPreTrainedModel):
                         last_layer_attention_avg_last_tok = last_layer_attention_avg[-1]
                         # get the attention in image token
                         last_layer_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[SYS_LENGTH:SYS_LENGTH+IMAGE_TOKEN_LENGTH]
-                        ####################################### H20 ##########################################
+                        ####################################### H20 confiurations ##########################################
 
                         if self.h2_user_prompt:
                             
@@ -836,7 +837,6 @@ class LlamaModel(LlamaPreTrainedModel):
                             # # get the indexs of the top ATTENTION_RANK tokens
                             top_attention_rank_index = last_layer_attention_avg_last_tok_image.topk(ATTENTION_RANK).indices + SYS_LENGTH
                             if self.h2_user_prompt:
-                               print("ooooooooooooooooooo")
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, user_prompt_indices))
                             else:
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, torch.arange(SYS_LENGTH+IMAGE_TOKEN_LENGTH,seq_length_with_past,device=device)))
