@@ -650,6 +650,8 @@ class LlamaModel(LlamaPreTrainedModel):
         self.h2_system_prompt = self.config.h2_system_prompt
         self.h2_user_system_prompt = self.config.h2_user_system_prompt
 
+        self.h2_layer = self.config.h2_layer
+
 
 
     def get_input_embeddings(self):
@@ -783,9 +785,12 @@ class LlamaModel(LlamaPreTrainedModel):
                 ATTENTION_RANK = self.fast_v_attention_rank
                 AGG_LAYER = self.fast_v_agg_layer
                 FASTV_INPLACE = self.fast_v_inplace
+                H2_LAYER = self.h2_layer
+                PRUNED_IMAGE_TOKEN_LENGTH = ATTENTION_RANK
                 
                 if AGG_LAYER:
                     assert AGG_LAYER > 0 , "K should be larger than 0"
+                    assert H2_LAYER > AGG_LAYER, "H20 should be applied after fastv"
 
                 
 
@@ -820,13 +825,13 @@ class LlamaModel(LlamaPreTrainedModel):
                         # TODO: Implement pruning of tokens based on recent budget.
                         generation_indices = torch.arange(SYS_LENGTH + IMAGE_TOKEN_LENGTH, seq_length_with_past)
                         should_apply_recent_budget = self.h2_system_prompt or self.h2_user_prompt or self.h2_user_system_prompt
-                        if should_apply_recent_budget:
+                        if False and should_apply_recent_budget:
                             # text_generated_attention_avg_last_tok = last_layer_attention_avg_last_tok[SYS_LENGTH + IMAGE_TOKEN_LENGTH: ]
                             # recent_budget = int(self.recent_budget_ratio * text_generated_attention_avg_last_tok.shape[0])
                             recent_budget = int(self.recent_budget_ratio * seq_length_with_past)
                             generation_indices = generation_indices[-recent_budget: ]
 
-                        if self.h2_user_prompt:
+                        if False and self.h2_user_prompt:
                             # heavy_hitter_1_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             heavy_budget = int(self.heavy_budget_ratio * heavy_hitter_attention_avg_last_tok_image.shape[0])
@@ -835,7 +840,7 @@ class LlamaModel(LlamaPreTrainedModel):
                             # get the indexs of the top ATTENTION_RANK tokens
                             top_attention_rank_index = last_layer_attention_avg_last_tok_image.topk(ATTENTION_RANK).indices + SYS_LENGTH
                             keep_indexs = torch.cat( (torch.arange(SYS_LENGTH,device=device), top_attention_rank_index, user_prompt_indices))
-                        if self.h2_system_prompt:
+                        if False and self.h2_system_prompt:
                             heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             # heavy_hitter_2_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             # heavy_hitter_attention_avg_last_tok_image = (torch.cat((heavy_hitter_1_attention_avg_last_tok_image, heavy_hitter_2_attention_avg_last_tok_image)))
@@ -852,7 +857,7 @@ class LlamaModel(LlamaPreTrainedModel):
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, user_prompt_indices))
                             else:
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, generation_indices))
-                        elif self.h2_user_system_prompt:
+                        elif False and self.h2_user_system_prompt:
                             heavy_hitter_1_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             heavy_hitter_2_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             heavy_hitter_attention_avg_last_tok_image = (torch.cat((heavy_hitter_1_attention_avg_last_tok_image, heavy_hitter_2_attention_avg_last_tok_image)))
@@ -871,7 +876,7 @@ class LlamaModel(LlamaPreTrainedModel):
                             keep_indexs = torch.cat( (torch.arange(SYS_LENGTH,device=device), top_attention_rank_index, torch.arange(SYS_LENGTH+IMAGE_TOKEN_LENGTH,seq_length_with_past,device=device)))
                         ###############################################################################################
 
-                        if should_apply_recent_budget and 1.0 > self.recent_budget_ratio > 0.0:
+                        if False and should_apply_recent_budget and 1.0 > self.recent_budget_ratio > 0.0:
                             # Union between indices if there is a recent budget
                             keep_indexs = torch.cat([keep_indexs, generation_indices]).unique()
 
@@ -889,6 +894,81 @@ class LlamaModel(LlamaPreTrainedModel):
                             None, (batch_size, new_seq_length), inputs_embeds, 0
                         )
 
+                    elif idx == H2_LAYER:
+                        # budgets.
+                        self.heavy_budget_ratio = 0.9
+                        self.recent_budget_ratio = 0.1
+
+                        fastV_hidden_state = all_hidden_states[AGG_LAYER]
+                        total_fastv_len = fastV_hidden_state.size(dim=1)
+
+                        last_layer_attention = layer_outputs[1]
+                        # compute average attention over different head
+                        last_layer_attention_avg = torch.mean(last_layer_attention, dim=1)[0]
+                        # generate new attention mask based on the average attention, sample the top ATTENTION_RANK tokens with highest attention
+                        last_layer_attention_avg_last_tok = last_layer_attention_avg[-1]
+
+                        generation_indices = torch.arange(SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH, total_fastv_len)
+                        should_apply_recent_budget = self.h2_system_prompt or self.h2_user_prompt or self.h2_user_system_prompt
+
+                        if should_apply_recent_budget:
+                            recent_budget = int(self.recent_budget_ratio * total_fastv_len)
+                            generation_indices = generation_indices[-recent_budget: ]
+
+                        if self.h2_user_prompt:
+                            heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+PRUNED_IMAGE_TOKEN_LENGTH):]
+                            heavy_budget = int(self.heavy_budget_ratio * heavy_hitter_attention_avg_last_tok_image.shape[0])
+                            heavy_hitter_attention_avg_last_tok_image_keep_indexes = heavy_hitter_attention_avg_last_tok_image.topk(heavy_budget).indices
+                            user_prompt_indices = heavy_hitter_attention_avg_last_tok_image_keep_indexes + SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH
+
+                            keep_indexs = torch.cat( (torch.arange(SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH,device=device), user_prompt_indices))
+
+                        if self.h2_system_prompt:
+                            heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
+                            
+                            heavy_budget = int(self.heavy_budget_ratio * heavy_hitter_attention_avg_last_tok_image.shape[0])
+                            heavy_hitter_attention_avg_last_tok_image_keep_indexes = heavy_hitter_attention_avg_last_tok_image.topk(heavy_budget).indices
+                            pruned_image_token_indices = torch.arange(SYS_LENGTH, SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH)
+                            
+                            if self.h2_user_prompt:
+                               keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, pruned_image_token_indices, user_prompt_indices))
+                            else:
+                               keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, pruned_image_token_indices, generation_indices))
+                        elif self.h2_user_system_prompt:
+                            heavy_hitter_1_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
+                            heavy_hitter_2_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+PRUNED_IMAGE_TOKEN_LENGTH):]
+                            heavy_hitter_attention_avg_last_tok_image = (torch.cat((heavy_hitter_1_attention_avg_last_tok_image, heavy_hitter_2_attention_avg_last_tok_image)))
+                            
+                            heavy_budget = int(self.heavy_budget_ratio * heavy_hitter_attention_avg_last_tok_image.shape[0])
+                            heavy_hitter_attention_avg_last_tok_image_keep_indexes = heavy_hitter_attention_avg_last_tok_image.topk(heavy_budget).indices
+                            indices_hh_user_prompt = torch.where(heavy_hitter_attention_avg_last_tok_image_keep_indexes>=(SYS_LENGTH))
+                            indices_hh_system = torch.where(heavy_hitter_attention_avg_last_tok_image_keep_indexes<(SYS_LENGTH))
+                            system_prompt_indices = heavy_hitter_attention_avg_last_tok_image_keep_indexes[indices_hh_system]
+                            user_prompt_indices = heavy_hitter_attention_avg_last_tok_image_keep_indexes[indices_hh_user_prompt]+ SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH
+                            
+                            pruned_image_token_indices = torch.arange(SYS_LENGTH, SYS_LENGTH + PRUNED_IMAGE_TOKEN_LENGTH)
+                            keep_indexs = torch.cat( (system_prompt_indices, pruned_image_token_indices, user_prompt_indices))
+                        else:
+                            keep_indexs = torch.arange(total_fastv_len, device=device)
+
+
+                        if should_apply_recent_budget and 1.0 > self.recent_budget_ratio > 0.0:
+                            # Union between indices if there is a recent budget
+                            keep_indexs = torch.cat([keep_indexs, generation_indices]).unique()
+
+                        # keep_indexs = torch.cat( (torch.arange(SYS_LENGTH,device=device), top_attention_rank_index, torch.arange(SYS_LENGTH+IMAGE_TOKEN_LENGTH,seq_length_with_past,device=device)))
+                        # sort index
+                        keep_indexs = keep_indexs.sort().values
+                        # update seq length
+                        new_seq_length = keep_indexs.shape[0]
+                        # filter hidden states
+                        hidden_states = hidden_states[:,keep_indexs,:]
+                        # update position ids
+                        position_ids = keep_indexs.unsqueeze(0)
+                        # update attention mask
+                        new_attention_mask = self._prepare_decoder_attention_mask(
+                            None, (batch_size, new_seq_length), inputs_embeds, 0
+                        )
 
                 # FastV Token Rerank, Attention Mask Implementation
                 elif USE_FAST_V:
