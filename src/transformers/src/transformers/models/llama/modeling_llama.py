@@ -819,6 +819,7 @@ class LlamaModel(LlamaPreTrainedModel):
                         ####################################### H20 confiurations ##########################################
                         
                         # budgets.
+<<<<<<< HEAD
                         # self.heavy_budget_ratio = 0.9
                         # self.recent_budget_ratio = 0.1
 
@@ -832,6 +833,21 @@ class LlamaModel(LlamaPreTrainedModel):
                             generation_indices = generation_indices[-recent_budget: ]
 
                         if self.same_layer and self.h2_user_prompt:
+=======
+                        self.heavy_budget_ratio = 0.9
+                        self.recent_budget_ratio = 0.1
+
+                        # TODO: Implement pruning of tokens based on recent budget.
+                        generation_indices = torch.arange(SYS_LENGTH + IMAGE_TOKEN_LENGTH, seq_length_with_past)
+                        should_apply_recent_budget = self.h2_system_prompt or self.h2_user_prompt or self.h2_user_system_prompt
+                        if should_apply_recent_budget:
+                            # text_generated_attention_avg_last_tok = last_layer_attention_avg_last_tok[SYS_LENGTH + IMAGE_TOKEN_LENGTH: ]
+                            # recent_budget = int(self.recent_budget_ratio * text_generated_attention_avg_last_tok.shape[0])
+                            recent_budget = int(self.recent_budget_ratio * seq_length_with_past)
+                            generation_indices = generation_indices[-recent_budget: ]
+
+                        if self.h2_user_prompt:
+>>>>>>> cdee9093ffd2ab3f40d13d910b8ad33dba8863b4
                             # heavy_hitter_1_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             heavy_budget = int(self.heavy_budget_ratio * heavy_hitter_attention_avg_last_tok_image.shape[0])
@@ -840,7 +856,11 @@ class LlamaModel(LlamaPreTrainedModel):
                             # get the indexs of the top ATTENTION_RANK tokens
                             top_attention_rank_index = last_layer_attention_avg_last_tok_image.topk(ATTENTION_RANK).indices + SYS_LENGTH
                             keep_indexs = torch.cat( (torch.arange(SYS_LENGTH,device=device), top_attention_rank_index, user_prompt_indices))
+<<<<<<< HEAD
                         if self.same_layer and self.h2_system_prompt:
+=======
+                        if self.h2_system_prompt:
+>>>>>>> cdee9093ffd2ab3f40d13d910b8ad33dba8863b4
                             heavy_hitter_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             # heavy_hitter_2_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             # heavy_hitter_attention_avg_last_tok_image = (torch.cat((heavy_hitter_1_attention_avg_last_tok_image, heavy_hitter_2_attention_avg_last_tok_image)))
@@ -857,7 +877,11 @@ class LlamaModel(LlamaPreTrainedModel):
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, user_prompt_indices))
                             else:
                                keep_indexs = torch.cat( (heavy_hitter_attention_avg_last_tok_image_keep_indexes, top_attention_rank_index, generation_indices))
+<<<<<<< HEAD
                         elif self.same_layer and self.h2_user_system_prompt:
+=======
+                        elif self.h2_user_system_prompt:
+>>>>>>> cdee9093ffd2ab3f40d13d910b8ad33dba8863b4
                             heavy_hitter_1_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[:SYS_LENGTH]
                             heavy_hitter_2_attention_avg_last_tok_image = last_layer_attention_avg_last_tok[(SYS_LENGTH+IMAGE_TOKEN_LENGTH):]
                             heavy_hitter_attention_avg_last_tok_image = (torch.cat((heavy_hitter_1_attention_avg_last_tok_image, heavy_hitter_2_attention_avg_last_tok_image)))
@@ -876,7 +900,11 @@ class LlamaModel(LlamaPreTrainedModel):
                             keep_indexs = torch.cat( (torch.arange(SYS_LENGTH,device=device), top_attention_rank_index, torch.arange(SYS_LENGTH+IMAGE_TOKEN_LENGTH,seq_length_with_past,device=device)))
                         ###############################################################################################
 
+<<<<<<< HEAD
                         if self.same_layer and should_apply_recent_budget and 1.0 > self.recent_budget_ratio > 0.0:
+=======
+                        if should_apply_recent_budget and 1.0 > self.recent_budget_ratio > 0.0:
+>>>>>>> cdee9093ffd2ab3f40d13d910b8ad33dba8863b4
                             # Union between indices if there is a recent budget
                             keep_indexs = torch.cat([keep_indexs, generation_indices]).unique()
 
