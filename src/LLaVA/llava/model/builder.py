@@ -108,7 +108,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
                 # print(kwargs)
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                print("xhuwnxzxxxxxxxxxxxxxxxxx")
+            
     else:
         # Load language model
         if model_base is not None:

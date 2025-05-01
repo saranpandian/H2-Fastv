@@ -27,6 +27,10 @@ import json
 from tqdm import tqdm
 
 import re	
+import time
+
+# Start timing
+
 contractions = {"aint": "ain't", "arent": "aren't", "cant": "can't", "couldve": "could've", "couldnt": "couldn't", \
                         "couldn'tve": "couldn't've", "couldnt've": "couldn't've", "didnt": "didn't", "doesnt": "doesn't", "dont": "don't", "hadnt": "hadn't", \
                         "hadnt've": "hadn't've", "hadn'tve": "hadn't've", "hasnt": "hasn't", "havent": "haven't", "hed": "he'd", "hed've": "he'd've", \
@@ -179,9 +183,14 @@ if __name__=="__main__":
     parser.add_argument('--fast-v-image-token-length', type=int, required=False, help='the length of image token')
     parser.add_argument('--fast-v-attention-rank', type=int, required=False, help='the rank of attention matrix')
     parser.add_argument('--fast-v-agg-layer', type=int, required=False, help='the layer of attention matrix')
+    parser.add_argument('--h2-agg-layer', type=int, required=False, help='the layer of attention matrix')
     parser.add_argument('--h2-user-prompt', default=False, action='store_true', help='whether to use heavy-hitter user-prompt')
     parser.add_argument('--h2-system-prompt', default=False, action='store_true', help='whether to use heavy-hitter system-prompt')
     parser.add_argument('--h2-user-system-prompt', default=False, action='store_true', help='whether to use heavy-hitter system user-prompt')
+    parser.add_argument('--recent-budget-ratio',  type=float, help='whether to use heavy-hitter system user-prompt')
+    parser.add_argument('--heavy-budget-ratio',  type=float, help='whether to use heavy-hitter system user-prompt')
+    parser.add_argument('--same-layer', default=False, action='store_true', help='whether to use heavy-hitter system user-prompt')   
+    # self.same_layer = self.config.same_layer
     # output path
     parser.add_argument('--output-path', type=str, required=True, help='the path to save the output json file')
 
@@ -244,6 +253,10 @@ if __name__=="__main__":
         model.config.h2_user_prompt = pargs.h2_user_prompt
         model.config.h2_system_prompt = pargs.h2_system_prompt
         model.config.h2_user_system_prompt = pargs.h2_user_system_prompt
+        model.config.recent_budget_ratio = pargs.recent_budget_ratio
+        model.config.heavy_budget_ratio = pargs.heavy_budget_ratio
+        model.config.h2_agg_layer = pargs.h2_agg_layer
+        model.config.same_layer = pargs.same_layer
     else:
         model.config.use_fast_v = False
 
@@ -304,19 +317,22 @@ if __name__=="__main__":
             
             # print(output_ids['sequences'][0, input_ids.shape[1]:])
             output = tokenizer.decode(output_ids['sequences'][0, input_ids.shape[1]:],skip_special_tokens=True).strip().replace("</s>","")
-            print(output)
-            print('  Cached: ', round(torch.cuda.memory_cached(0)/1024**3, 1), 'GB')
             outputs.append(output)
+            memory = round(torch.cuda.memory_cached(0)/1024**3, 5)
 
         
 
-        return outputs
+        return outputs, memory
     
 
     # %%
     # inference and compute cider scores
-    oakvqa_val_inference_outputs = inference(valid_prompt,valid_images)
+    start_time = time.time()
+    oakvqa_val_inference_outputs, memory = inference(valid_prompt,valid_images)
+    end_time = time.time()
 
+    # Calculate elapsed time
+    elapsed_time = end_time - start_time
 
 
     # %%
@@ -338,4 +354,4 @@ if __name__=="__main__":
 
     with open(output_path,"w") as f:
         # json dumps
-        json.dump({"acc":str(acc),"output": oakvqa_val_inference_outputs, "labels":valid_anwser_options},f,indent=4)
+        json.dump({"acc":str(acc),'time':elapsed_time, 'Cached memory':memory},f,indent=4)
